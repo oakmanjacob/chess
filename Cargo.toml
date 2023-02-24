@@ -1,11 +1,23 @@
 [package]
-name = "chessmarket_rs"
-version = "0.1.0"
+name = "chessbot"
+version = "0.2.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+authors = ["Jacob Oakman"]
 
 [dependencies]
-derive_more = "0.99.17"
+clap = { version = "4.1.6", features = ["derive"] }
 colored = "2.0.0"
+derive_more = "0.99.17"
 eyre = "0.6.8"
+futures = "0.3.26"
+lazy_static = "1.4.0"
+rayon = "1.6.1"
+regex = "1.7.1"
+thirtyfour = "0.31.0"
+tokio = "1.25.0"
+
+[profile.dev]
+opt-level = 0
+
+[profile.release]
+opt-level = 3
