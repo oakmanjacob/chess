@@ -10,7 +10,7 @@ pub struct Piece {
 impl Piece {
     pub fn get_piece(name: char) -> Option<Piece> {
         let color = if name.is_ascii_uppercase() { PieceColor::White } else { PieceColor::Black };
-        PieceType::get(name).map(|pt| Piece{piece_type: pt, color})
+        PieceType::from_char(name).map(|pt| Piece{piece_type: pt, color})
     }
 
     pub fn to_char(&self) -> char {
@@ -40,7 +40,7 @@ pub enum PieceType {
 }
 
 impl PieceType {
-    pub fn get(name: char) -> Option<PieceType> {
+    pub fn from_char(name: char) -> Option<PieceType> {
         match name.to_ascii_lowercase() {
             'k' => Some(Self::King),
             'q' => Some(Self::Queen),
@@ -78,6 +78,14 @@ pub enum PieceColor {
 }
 
 impl PieceColor {
+    pub fn from_char(piece_char: char) -> Option<PieceColor> {
+        match piece_char {
+            'b' => Some(PieceColor::Black),
+            'w' => Some(PieceColor::White),
+            _ => None
+        }
+    }
+
     pub fn to_char(&self) -> char {
         match self {
             PieceColor::Black => 'b',
