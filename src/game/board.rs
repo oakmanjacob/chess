@@ -24,15 +24,41 @@ impl Board {
         self.grid[row][column].take()
     }
 
+    pub fn get_pieces(&self, player_color: &PieceColor) -> Vec<(Position, PieceType)> {
+        let mut piece_list = vec!();
+
+        for row in 0usize..=7usize {
+            for column in 0usize..=7usize {
+                if let Some(piece) = self.get(&Position::encode(row, column)) {
+                    if &piece.color == player_color {
+                        piece_list.push((Position::encode(row, column), piece.piece_type));
+                    }
+                }
+            }
+        }
+
+        piece_list
+    }
+
+    pub fn get_king(&self, player_color: &PieceColor) -> Option<Position> {
+        for row in 0usize..=7usize {
+            for column in 0usize..=7usize {
+                if let Some(piece) = self.get(&Position::encode(row, column)) {
+                    if &piece.color == player_color && piece.piece_type == PieceType::King {
+                        return Some(Position::encode(row, column));
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
     pub fn make_move(&mut self, from: &Position, to: &Position) -> Option<Piece> {
         let (from_row, from_column) = from.decode();
         let (to_row, to_column) = to.decode();
 
-        // println!("Make move ({}, {}) ({}, {})", from_row, from_column, to_row, to_column);
-        // println!("Move made {} {}", self.grid[from_row][from_column].is_none(), self.grid[to_row][to_column].is_some());
-        let res = self.grid[from_row][from_column].take().and_then(|piece| self.grid[to_row][to_column].replace(piece));
-        // println!("Move made {} {} {}", res.map_or("None".to_owned(), |piece| format!("{}", piece.to_char())), self.grid[from_row][from_column].is_none(), self.grid[to_row][to_column].is_some());
-        res
+        self.grid[from_row][from_column].take().and_then(|piece| self.grid[to_row][to_column].replace(piece))
     }
 
     pub fn test_move(&self, from: &Position, to: &Position, king_position: &Position, player_color: &PieceColor) -> bool {
@@ -50,56 +76,33 @@ impl Board {
             }
         }
         
-        let pawn_row = position.forward(player_color).row();
+        let forward_position = position.forward(player_color);
 
         // Check Diagonals
         for threat_position in self.get_bishup_move_positions(position, player_color, true) {
             let threat_row = threat_position.row();
 
-            if self.get(&threat_position).map_or(false, |&Piece{piece_type, color}| color != *player_color && (piece_type == PieceType::Queen || piece_type == PieceType::Bishup || (piece_type == PieceType::Pawn && threat_row == pawn_row))) {
+
+            if self.get(&threat_position).map_or(false, |&Piece{piece_type, color}| color != *player_color && (
+                    piece_type == PieceType::Queen ||
+                    piece_type == PieceType::Bishup ||
+                    (piece_type == PieceType::Pawn && forward_position.map_or(false, |forward| threat_row == forward.row())) ||
+                    (piece_type == PieceType::King && position.row().abs_diff(threat_row) == 1usize))) {
                 return true;
             }
         }
 
         // Check Columns and Rows
         for threat_position in self.get_rook_move_positions(position, player_color, true) {
-            if self.get(&threat_position).map_or(false, |&Piece{piece_type, color}| color != *player_color && (piece_type == PieceType::Queen || piece_type == PieceType::Rook)) {
+            if self.get(&threat_position).map_or(false, |&Piece{piece_type, color}| color != *player_color && (
+                piece_type == PieceType::Queen || 
+                piece_type == PieceType::Rook ||
+                (piece_type == PieceType::King && (position.row().abs_diff(threat_position.row()) == 1usize) || position.column().abs_diff(threat_position.column()) == 1usize))) {
                 return true;
             }
         }
 
         false
-    }
-
-    pub fn get_threats(&self, position: &Position, player_color: &PieceColor) -> Vec<Position> {
-        let mut threats = vec!();
-
-        // Check Knight Moves
-        for threat_position in self.get_knight_move_positions(position, player_color, true) {
-            if self.get(&threat_position).map_or(false, |&Piece{piece_type, color}| color != *player_color && piece_type == PieceType::Knight) {
-                threats.push(threat_position)
-            }
-        }
-        
-        let pawn_row = position.forward(player_color).row();
-
-        // Check Diagonals
-        for threat_position in self.get_bishup_move_positions(position, player_color, true) {
-            let threat_row = threat_position.row();
-
-            if self.get(&threat_position).map_or(false, |&Piece{piece_type, color}| color != *player_color && (piece_type == PieceType::Queen || piece_type == PieceType::Bishup || (piece_type == PieceType::Pawn && threat_row == pawn_row))) {
-                threats.push(threat_position)
-            }
-        }
-
-        // Check Columns and Rows
-        for threat_position in self.get_rook_move_positions(position, player_color, true) {
-            if self.get(&threat_position).map_or(false, |&Piece{piece_type, color}| color != *player_color && (piece_type == PieceType::Queen || piece_type == PieceType::Rook)) {
-                threats.push(threat_position)
-            }
-        }
-
-        threats
     }
 
     pub fn get_knight_move_positions(&self, position: &Position, player_color: &PieceColor, get_captures_only: bool) -> Vec<Position> {

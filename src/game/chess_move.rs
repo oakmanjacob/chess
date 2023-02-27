@@ -1,5 +1,7 @@
 use super::{piece::PieceType, position::Position};
 use std::fmt;
+use regex::*;
+use lazy_static::*;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ChessMove {
@@ -10,11 +12,38 @@ pub enum ChessMove {
 }
 
 impl ChessMove {
-    pub fn from_str(from_str: &str, to_str: &str) -> ChessMove {
-        let from = Position::from_str(from_str).expect("Invalid From string in chessmove generation");
-        let to = Position::from_str(to_str).expect("Invalid to string in chessmove generation");
+    #[allow(dead_code)]
+    pub fn from_str(move_str: &str) -> Option<ChessMove> {
+        lazy_static! {
+            static ref MOVE_REGEX: Regex = Regex::new(r"(?P<from>[a-h][1-8])(?P<to>[a-h][1-8])").unwrap();
+            static ref PROMOTE_REGEX: Regex = Regex::new(r"(?P<from>[a-h][1-8])(?P<to>[a-h][1-8])(?P<piece_type>[qrbn])").unwrap();
+        }
 
-        ChessMove::Move(from, to)
+        match move_str {
+            "O-O" => Some(ChessMove::CastleKingside),
+            "O-O-O" => Some(ChessMove::CastleQueenside),
+            _ => {
+                if let Some(captures) = PROMOTE_REGEX.captures(move_str) {
+                    if let (Ok(from), Ok(to), Some(piece_type)) = (Position::from_str(&captures["from"]), Position::from_str(&captures["to"]), PieceType::from_str(&captures["piece_type"])) {
+                        Some(ChessMove::PawnPromote(from, to, piece_type))
+                    }
+                    else {
+                        None
+                    }
+                }
+                else if let Some(captures) = MOVE_REGEX.captures(move_str) {
+                    if let (Ok(from), Ok(to)) = (Position::from_str(&captures["from"]), Position::from_str(&captures["to"])) {
+                        Some(ChessMove::Move(from, to))
+                    }
+                    else {
+                        None
+                    }
+                }
+                else {
+                    None
+                }
+            }
+        }
     }
 }
 

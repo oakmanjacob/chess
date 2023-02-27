@@ -52,6 +52,18 @@ impl PieceType {
         }
     }
 
+    pub fn from_str(name: &str) -> Option<PieceType> {
+        match name {
+            "k" => Some(Self::King),
+            "q" => Some(Self::Queen),
+            "b" => Some(Self::Bishup),
+            "n" => Some(Self::Knight),
+            "r" => Some(Self::Rook),
+            "p" => Some(Self::Pawn),
+            _ => None
+        }
+    }
+
     pub fn to_char(self) -> char {
         use PieceType::*;
         match self {

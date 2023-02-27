@@ -2,21 +2,20 @@ pub mod board;
 pub mod piece;
 pub mod chess_move;
 pub mod position;
-pub mod tracker;
 
 use std::hash::Hash;
 
 use board::*;
 use piece::*;
-use tracker::VectorPieceTracker;
 use position::Position;
 use chess_move::ChessMove;
 use eyre::{eyre, Result};
+use serde_json::value;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CastleRights {
-    kingside: bool,
-    queenside: bool,
+    pub kingside: bool,
+    pub queenside: bool,
 }
 
 impl CastleRights {
@@ -118,19 +117,24 @@ impl Game {
             result.en_passant = match Position::from_str(sections[3]) {
                 Ok(pos) => {
                     let pos_tuple = pos.decode();
-                    match result.turn {
-                        PieceColor::Black => if pos_tuple.0 == 2 && result.board.get(&pos.forward(&PieceColor::White)).map_or(false, |&p| p == Piece { piece_type: PieceType::Pawn, color: PieceColor::White }) {
-                            Some(pos)
+                    if let Some(forward) = pos.forward(&!result.turn) {
+                        match result.turn {
+                            PieceColor::Black => if pos_tuple.0 == 2 && result.board.get(&forward).map_or(false, |&p| p == Piece { piece_type: PieceType::Pawn, color: PieceColor::White }) {
+                                Some(pos)
+                            }
+                            else {
+                                return Err(eyre!("Invalid En Passant Black"))
+                            },
+                            PieceColor::White => if pos_tuple.0 == 5 && result.board.get(&forward).map_or(false, |&p| p == Piece { piece_type: PieceType::Pawn, color: PieceColor::Black }) {
+                                Some(pos)
+                            }
+                            else {
+                                return Err(eyre!("Invalid En Passant White"))
+                            },
                         }
-                        else {
-                            return Err(eyre!("Invalid En Passant Black"))
-                        },
-                        PieceColor::White => if pos_tuple.0 == 5 && result.board.get(&pos.forward(&PieceColor::White)).map_or(false, |&p| p == Piece { piece_type: PieceType::Pawn, color: PieceColor::Black }) {
-                            Some(pos)
-                        }
-                        else {
-                            return Err(eyre!("Invalid En Passant White"))
-                        },
+                    }
+                    else {
+                        return Err(eyre!("Invalid En Passant on edge of board"))
                     }
                 },
                 Err(msg) => return Err(eyre!("Invalid En Passant {}, {}", sections[3], msg))
@@ -195,15 +199,21 @@ impl Game {
     }
 
     /// Gets all valid moves from a specific chess position
-    pub fn get_moves(&self, tracker: &VectorPieceTracker) -> Vec<ChessMove> {
+    pub fn get_moves(&self) -> Vec<ChessMove> {
         let mut moves = vec!();
 
         // TODO: Optimize function so we don't have to look at every check
 
         // Go through all pieces and check for valid moves
-        let piece_positions: Vec<(Position, PieceType)> = tracker.get_pieces(&self.turn);
+        let piece_positions: Vec<(Position, PieceType)> = self.board.get_pieces(&self.turn);
 
-        let (king_position, _) = piece_positions.iter().find(|(_, piece_type)| *piece_type == PieceType::King).expect("Attempted to get moves but piece list has no king!");
+        let (king_position, _) = match piece_positions.iter().find(|(_, piece_type)| *piece_type == PieceType::King) {
+            Some(val) => val,
+            None => {
+                println!("Attempted to get moves but piece list has no king!");
+                return moves;
+            }
+        };
 
         for (from, cur_piece_type) in piece_positions.iter() {
             match cur_piece_type {
@@ -256,23 +266,10 @@ impl Game {
                     let must_promote = [(PieceColor::Black, 1usize), (PieceColor::White, 6usize)].contains(&(self.turn, from.row()));
                     let promotion_types = [PieceType::Queen, PieceType::Rook, PieceType::Bishup, PieceType::Knight];
 
-                    let to = from.forward(&self.turn);
-                    let (to_row, to_column) = to.decode_isize();
-                    if self.board.get(&to).is_none() {
-                        if self.board.test_move(from, &to, king_position, &self.turn) {
-                            if must_promote {
-                                for piece_type in promotion_types {
-                                    moves.push(ChessMove::PawnPromote(*from, to, piece_type))
-                                }
-                            }
-                            else {
-                                moves.push(ChessMove::Move(*from, to));
-                            }
-                        }
-
-                        if [(PieceColor::Black, 6usize), (PieceColor::White, 1usize)].contains(&(self.turn, from.row())) {
-                            let to = to.forward(&self.turn);
-                            if self.board.get(&to).is_none() && self.board.test_move(from, &to, king_position, &self.turn) {
+                    if let Some(to) = from.forward(&self.turn) {
+                        let (to_row, to_column) = to.decode_isize();
+                        if self.board.get(&to).is_none() {
+                            if self.board.test_move(from, &to, king_position, &self.turn) {
                                 if must_promote {
                                     for piece_type in promotion_types {
                                         moves.push(ChessMove::PawnPromote(*from, to, piece_type))
@@ -282,27 +279,42 @@ impl Game {
                                     moves.push(ChessMove::Move(*from, to));
                                 }
                             }
-                        }
-                    }
 
-                    // Check captures
-                    for position_values in [(to_row, to_column + 1),(to_row, to_column - 1)] {
-                        if let Some(to) = Position::encode_checked(position_values.0, position_values.1) {
-                            if Some(to) == self.en_passant {
-                                let mut next_board = self.board;
-                                next_board.make_move(from, &to);
-                                if !next_board.has_check(king_position, &self.turn) {
-                                    moves.push(ChessMove::Move(*from, to));
-                                }
-                            }
-                            else if self.board.get(&to).map_or(false, |&Piece{piece_type: _, color}| color != self.turn) && self.board.test_move(from, &to, king_position, &self.turn) {
-                                if must_promote {
-                                    for piece_type in promotion_types {
-                                        moves.push(ChessMove::PawnPromote(*from, to, piece_type))
+                            if [(PieceColor::Black, 6usize), (PieceColor::White, 1usize)].contains(&(self.turn, from.row())) {
+                                if let Some(to) = to.forward(&self.turn) {
+                                    if self.board.get(&to).is_none() && self.board.test_move(from, &to, king_position, &self.turn) {
+                                        if must_promote {
+                                            for piece_type in promotion_types {
+                                                moves.push(ChessMove::PawnPromote(*from, to, piece_type))
+                                            }
+                                        }
+                                        else {
+                                            moves.push(ChessMove::Move(*from, to));
+                                        }
                                     }
                                 }
-                                else {
-                                    moves.push(ChessMove::Move(*from, to));
+                            }
+                        }
+
+                        // Check captures
+                        for position_values in [(to_row, to_column + 1),(to_row, to_column - 1)] {
+                            if let Some(to) = Position::encode_checked(position_values.0, position_values.1) {
+                                if Some(to) == self.en_passant {
+                                    let mut next_board = self.board;
+                                    next_board.make_move(from, &to);
+                                    if !next_board.has_check(king_position, &self.turn) {
+                                        moves.push(ChessMove::Move(*from, to));
+                                    }
+                                }
+                                else if self.board.get(&to).map_or(false, |&Piece{piece_type: _, color}| color != self.turn) && self.board.test_move(from, &to, king_position, &self.turn) {
+                                    if must_promote {
+                                        for piece_type in promotion_types {
+                                            moves.push(ChessMove::PawnPromote(*from, to, piece_type))
+                                        }
+                                    }
+                                    else {
+                                        moves.push(ChessMove::Move(*from, to));
+                                    }
                                 }
                             }
                         }
@@ -373,9 +385,8 @@ impl Game {
     /// # Arguments
     /// 
     /// * `chess_move` - A ChessMove generated by the get_moves function 
-    pub fn make_move(&mut self, chess_move: &ChessMove, tracker: &mut VectorPieceTracker) {
+    pub fn make_move(&mut self, chess_move: &ChessMove) {
         let mut remove_en_passant = true;
-        let old_fen = self.to_fen();
 
         match chess_move {
             ChessMove::CastleKingside => {
@@ -389,12 +400,6 @@ impl Game {
 
                 self.board.make_move(&king_from, &king_to);
                 self.board.make_move(&rook_from, &rook_to);
-
-                tracker.remove_piece(&king_from, &self.turn);
-                tracker.replace_piece(&king_to, &Piece{piece_type: PieceType::King, color: self.turn});
-
-                tracker.remove_piece(&rook_from, &self.turn);
-                tracker.replace_piece(&rook_to, &Piece{piece_type: PieceType::Rook, color: self.turn});
             },
             ChessMove::CastleQueenside => {
                 self.castle_rights[self.turn as usize].kingside = false;
@@ -407,12 +412,6 @@ impl Game {
 
                 self.board.make_move(&king_from, &king_to);
                 self.board.make_move(&rook_from, &rook_to);
-
-                tracker.remove_piece(&king_from, &self.turn);
-                tracker.replace_piece(&king_to, &Piece{piece_type: PieceType::King, color: self.turn});
-
-                tracker.remove_piece(&rook_from, &self.turn);
-                tracker.replace_piece(&rook_to, &Piece{piece_type: PieceType::Rook, color: self.turn});
             },
             ChessMove::Move(from, to) => {
                 // Handle moves which would break castling rights.
@@ -441,8 +440,12 @@ impl Game {
 
                 // Handle capture by en passants
                 if Some(to) == self.en_passant.as_ref() && self.board.get(from).map_or(false, |Piece{piece_type, color: _}| piece_type == &PieceType::Pawn) {
-                    self.board.remove_piece(&to.backward(&self.turn)).take();
-                    tracker.remove_piece(&to.backward(&self.turn), &!self.turn);
+                    if let Some(captured) = to.backward(&self.turn) {
+                        self.board.remove_piece(&captured).take();
+                    }
+                    else {
+                        println!("Invalid En Passant because captured piece would be off the board");
+                    }
                 }
 
                 // Handle double move and marking en passant square
@@ -455,14 +458,11 @@ impl Game {
                 let to_row = to.row();
 
                 if (from_row, to_row) == double_move_from_to && self.board.get(from).map_or(false, |&Piece{piece_type, color: _}| piece_type == PieceType::Pawn) {
-                    self.en_passant = Some(to.clone().backward(&self.turn));
+                    self.en_passant = to.clone().backward(&self.turn);
                     remove_en_passant = false;
                 }
 
                 self.board.make_move(from, to);
-
-                tracker.remove_piece(from, &self.turn);
-                tracker.replace_piece(to, self.board.get(to).expect(format!("Failed to move piece {}, {}, {}, {}, {}", old_fen, self.to_fen(), chess_move, from, to).as_str()));
 
             },
             ChessMove::PawnPromote(from, to, piece_type) => {
@@ -478,9 +478,6 @@ impl Game {
 
                 self.board.remove_piece(from);
                 self.board.add_piece(Piece{piece_type: *piece_type, color: self.turn}, to);
-                
-                tracker.remove_piece(from, &self.turn);
-                tracker.replace_piece(to, &Piece{piece_type: *piece_type, color: self.turn});
             },
         }
 
@@ -490,40 +487,7 @@ impl Game {
         }
     }
 
-    pub fn perft(&mut self, depth: usize) -> Vec<(ChessMove, usize)> {
-        let tracker = VectorPieceTracker::from_board(&self.board);
-        let moves = self.get_moves(&tracker);
-    
-        let mut result: Vec<(ChessMove, usize)> = vec!();
-    
-        for chess_move in moves.iter() {
-            let mut next_game = self.clone();
-            next_game.make_move(chess_move, &mut tracker.clone());
-    
-            result.push((*chess_move, next_game.perft_helper(depth - 1)));
-        }
-    
-        result
-    }
-    
-    fn perft_helper(&mut self, depth: usize) -> usize {
-        if depth == 0 {
-            return 1;
-        }
-    
-        let tracker = VectorPieceTracker::from_board(&self.board);
-        let moves = self.get_moves(&tracker);
-        let mut result = 0;
-    
-        for chess_move in moves.iter() {
-            let mut next_game = self.clone();
-            next_game.make_move(chess_move, &mut tracker.clone());
-            result += next_game.perft_helper(depth - 1);
-        }
-    
-        result
-    }
-
+    #[allow(dead_code)]
     pub fn print(&self) {
         println!("{}'s Turn", self.turn);
         println!("k:{}, q:{}, K:{}, Q:{}", self.castle_rights[0].kingside, self.castle_rights[0].queenside,self.castle_rights[1].kingside, self.castle_rights[1].queenside);
@@ -536,13 +500,47 @@ impl Game {
 mod tests {
     use super::*;
 
+    impl Game {
+        pub fn perft(&mut self, depth: usize) -> Vec<(ChessMove, usize)> {
+            let moves = self.get_moves();
+        
+            let mut result: Vec<(ChessMove, usize)> = vec!();
+        
+            for chess_move in moves.iter() {
+                let mut next_game = self.clone();
+                next_game.make_move(chess_move);
+        
+                result.push((*chess_move, next_game.perft_helper(depth - 1)));
+            }
+        
+            result
+        }
+        
+        fn perft_helper(&mut self, depth: usize) -> usize {
+            if depth == 0 {
+                return 1;
+            }
+        
+            let moves = self.get_moves();
+            let mut result = 0;
+        
+            for chess_move in moves.iter() {
+                let mut next_game = self.clone();
+                next_game.make_move(chess_move);
+                result += next_game.perft_helper(depth - 1);
+            }
+        
+            result
+        }
+    }
+
     // 333.39
     #[test]
     fn test_perft_start()
     {
         let mut curr_game = Game::new();
 
-        let values = curr_game.perft(5);
+        let values = curr_game.perft(8);
 
         let expected_set: Vec<(&str, usize)> = vec!(
             ("a2a3", 181046),

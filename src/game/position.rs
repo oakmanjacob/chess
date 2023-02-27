@@ -29,7 +29,7 @@ impl fmt::Display for Position {
 
 impl Position {
     pub fn encode(row: usize, column: usize) -> Position {
-        Position {row: row, column: column}
+        Position {row, column}
     }
 
     pub fn encode_checked(row: isize, column: isize) -> Option<Position> {
@@ -50,7 +50,7 @@ impl Position {
     }
 
     pub fn row(&self) -> usize {
-        self.row as usize
+        self.row
     }
 
     pub fn column(&self) -> usize {
@@ -75,22 +75,40 @@ impl Position {
         let col = bytes[0] as usize - 'a' as usize;
         let row = bytes[1] as usize - '1' as usize;
 
-        println!("row: {}, col: {}", row, col);
-
         Ok(Position::encode(row, col))
     }
 
-    pub fn forward(&self, player_color: &PieceColor) -> Position {
+    pub fn forward(&self, player_color: &PieceColor) -> Option<Position> {
         match player_color {
-            PieceColor::Black => Position{row: self.row - 1, column: self.column},
-            PieceColor::White => Position{row: self.row + 1, column: self.column}
+            PieceColor::Black => if self.row != 0 {
+                Some(Position{row: self.row - 1, column: self.column})
+            }
+            else {
+                None
+            },
+            PieceColor::White => if self.row != 7 {
+                Some(Position{row: self.row + 1, column: self.column})
+            }
+            else {
+                None
+            }
         }
     }
 
-    pub fn backward(&self, player_color: &PieceColor) -> Position {
+    pub fn backward(&self, player_color: &PieceColor) -> Option<Position> {
         match player_color {
-            PieceColor::Black => Position{row: self.row + 1, column: self.column},
-            PieceColor::White => Position{row: self.row - 1, column: self.column}
+            PieceColor::Black => if self.row != 7 {
+                Some(Position{row: self.row + 1, column: self.column})
+            }
+            else {
+                None
+            },
+            PieceColor::White => if self.row != 0 {
+                Some(Position{row: self.row - 1, column: self.column})
+            }
+            else {
+                None
+            }
         }
     }
 }

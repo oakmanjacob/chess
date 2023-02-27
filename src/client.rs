@@ -1,4 +1,6 @@
 use thirtyfour::prelude::*;
+use thirtyfour::cookie::Cookie;
+use thirtyfour::cookie::SameSite;
 use regex::*;
 use lazy_static::lazy_static;
 use crate::game::position::Position;
@@ -6,7 +8,7 @@ use crate::game::position::Position;
 use super::game::board::Board;
 use super::game::piece::{PieceType, PieceColor};
 use super::game::chess_move::ChessMove;
-use super::game::{Game, piece::*, tracker::*};
+use super::game::{Game, piece::*};
 
 pub struct Client {
     board_pieces: Vec<(Piece, Position)>,
@@ -15,15 +17,24 @@ pub struct Client {
 
 impl Client {
 
-    pub async fn new(client_url: &str) -> WebDriverResult<Client> {
+    pub async fn new(phpsessid: String) -> WebDriverResult<Client> {
         let caps = DesiredCapabilities::chrome();
-        let driver = WebDriver::new("http://localhost:9515", caps).await?;
-        driver.goto(client_url).await?;
+        let driver = WebDriver::new("http://localhost:9515", caps).await.expect("Unable to connect to WebDriver");
+
+
+        // navigate to chess.com and set the session id cookie to use pre-existing authentication
+        driver.goto("https://www.chess.com").await?;
+        let mut cookie = Cookie::new("PHPSESSID", phpsessid);
+        cookie.set_domain(".chess.com");
+        cookie.set_path("/");
+        cookie.set_same_site(Some(SameSite::Lax));
+        driver.add_cookie(cookie).await.unwrap();
+        driver.refresh().await.unwrap();
 
         let game = Game::new();
 
         let mut client = Client{board_pieces: vec!(), driver};
-        client.update_pieces_from_board(&game.board);
+        client.update_pieces_from_board(&game.board).await;
         Ok(client)
     }
 
@@ -51,6 +62,8 @@ impl Client {
             }
         }
     }
+
+    // Use highlight square-25 div to find a move
 
     pub async fn update_board(&mut self, player_color: &PieceColor) -> WebDriverResult<Option<ChessMove>> {
         // <chess-board class="board" id="board-single">
@@ -95,9 +108,6 @@ impl Client {
                     println!("Could not find position for piece");
                 }
             }
-            else {
-                println!("Could not find type for piece");
-            }
         }
 
         let mut to_piece_positions: Vec<(Piece, Position)> = vec!();
@@ -114,30 +124,53 @@ impl Client {
             }
         }
 
-        self.board_pieces = piece_positions;
-
         if from_piece_positions.len() == 2 && to_piece_positions.len() == 2 {
             // Castling
-            if let Some((_, from)) = from_piece_positions.iter().find(|(Piece{piece_type, color}, position)| piece_type == &PieceType::Rook) {
-                let (from_row, from_column) = from.decode();
+            if let Some((_, from)) = from_piece_positions.iter().find(|(Piece{piece_type, color:_}, _)| piece_type == &PieceType::Rook) {
+                let (_, from_column) = from.decode();
                 
                 if from_column == 7 {
+                    self.board_pieces = piece_positions;
                     return Ok(Some(ChessMove::CastleKingside));
                 }
                 else if from_column == 0 {
+                    self.board_pieces = piece_positions;
                     return Ok(Some(ChessMove::CastleQueenside));
                 }
             }
+            println!("Failed to recognize castle move");
+            println!("Previous State");
+            for (piece, position) in self.board_pieces.iter() {
+                println!("{} {}", piece.to_char(), position);
+            }
+
+            println!("Next State");
+            for (piece, position) in piece_positions.iter() {
+                println!("{} {}", piece.to_char(), position);
+            }
+
+            println!("From Diff");
+            for (piece, position) in from_piece_positions.iter() {
+                println!("{} {}", piece.to_char(), position);
+            }
+
+            println!("To Diff");
+            for (piece, position) in to_piece_positions.iter() {
+                println!("{} {}", piece.to_char(), position);
+            }
         }
-        else if let Some((Piece{piece_type: from_piece_type, color: _}, from)) = from_piece_positions.iter().find(|(Piece{piece_type, color}, position)| color == player_color) {
-            if let Some((Piece{piece_type: to_piece_type, color: _}, to)) = to_piece_positions.iter().find(|(Piece{piece_type, color}, position)| color == player_color) {
+        else if let Some((Piece{piece_type: from_piece_type, color: _}, from)) = from_piece_positions.iter().find(|(Piece{piece_type:_, color}, _)| color == player_color) {
+            if let Some((Piece{piece_type: to_piece_type, color: _}, to)) = to_piece_positions.iter().find(|(Piece{piece_type:_, color}, _)| color == player_color) {
                 if from_piece_type != to_piece_type {
+                    self.board_pieces = piece_positions;
                     return Ok(Some(ChessMove::PawnPromote(*from, *to, *to_piece_type)))
                 }
                 else {
+                    self.board_pieces = piece_positions;
                     return Ok(Some(ChessMove::Move(*from, *to)))
                 }
             }
+            println!("Failed to recognize move");
         }
 
         Ok(None)
