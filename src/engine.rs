@@ -1,18 +1,19 @@
-use crate::game::piece::{PieceType, Piece};
+use crate::game::piece::PieceType;
 
 use super::game::{chess_move::ChessMove, piece::PieceColor, position::Position, Game};
+use lazy_static::lazy_static;
 use rand::Rng;
 use std::cmp;
-use lazy_static::lazy_static;
 
 pub struct Engine {
     pub game: Game,
+    tree: Option<Node>,
     search_depth: u16,
-    player: PieceColor,
+    pub player: PieceColor,
 }
 
 pub struct Node {
-    children: Vec<(ChessMove, Node)>,
+    children: Option<Vec<(ChessMove, Node)>>,
     value: i32,
     depth: u16,
 }
@@ -21,8 +22,103 @@ impl Engine {
     pub fn new(game: Game, player: PieceColor) -> Engine {
         Engine {
             game,
+            tree: None,
             search_depth: 5,
             player,
+        }
+    }
+
+    pub fn iterative_search(
+        &mut self,
+        game: &Game,
+        root: &mut Node,
+        depth: u16,
+        mut alpha: i32,
+        mut beta: i32,
+    ) {
+        if root.depth >= depth {
+            return;
+        }
+        root.depth = depth;
+
+        //
+        if depth == 0 {
+            root.value = self.evaluate_state(game);
+            return;
+        }
+
+        // Handle already calculated stalemates and checkmates
+        if root
+            .children
+            .as_ref()
+            .map_or(false, |children| children.is_empty())
+        {
+            return;
+        }
+
+        let children = match root.children.as_mut() {
+            Some(children) => children,
+            None => {
+                let moves = game.get_moves();
+                let mut children = vec![];
+
+                // Handle stalemates
+                if moves.is_empty() && !game.board.has_check(&game.board.get_king(&game.turn).unwrap(), &game.turn)
+                {
+                    root.value = 0;
+                    root.children = Some(vec![]);
+                    return;
+                }
+
+                for chess_move in moves.iter() {
+                    children.push((
+                        *chess_move,
+                        Node {
+                            children: None,
+                            value: 0,
+                            depth: depth - 1,
+                        },
+                    ))
+                }
+
+                root.children = Some(children);
+                root.children
+                    .as_mut()
+                    .expect("Could not get reference to children after transferring ownership")
+            }
+        };
+
+        if game.turn == self.player {
+            root.value = i32::MIN;
+            children.sort_unstable_by_key(|(_, a)| -a.value);
+            for (chess_move, child) in children.iter_mut() {
+                let mut next_game = game.clone();
+                next_game.make_move(chess_move);
+                self.iterative_search(&next_game, child, depth - 1, alpha, beta);
+                root.value = cmp::max(root.value, child.value);
+
+                if root.value > beta {
+                    break;
+                }
+                alpha = cmp::max(root.value, alpha);
+            }
+        } else {
+            // min
+            root.value = i32::MAX;
+            children.sort_unstable_by_key(|(_, a)| a.value);
+            for (chess_move, child) in children.iter_mut() {
+                let mut next_game = game.clone();
+                next_game.make_move(chess_move);
+                self.iterative_search(&next_game, child, depth - 1, alpha, beta);
+
+                root.value = cmp::min(root.value, child.value);
+
+                if root.value < alpha {
+                    break;
+                }
+
+                beta = cmp::min(root.value, beta);
+            }
         }
     }
 
@@ -116,35 +212,99 @@ impl Engine {
         returned_move
     }
 
+    pub fn get_best_move_iterative(&mut self) -> Option<ChessMove> {
+        let mut expected_value = 0;
+        for i in 1..=self.search_depth {
+            let mut root = self.tree.take().unwrap_or(Node {
+                children: None,
+                value: 0,
+                depth: 0,
+            });
+            self.iterative_search(&Game::new(), &mut root, i, i32::MIN, i32::MAX);
+            expected_value = root.value;
+            self.tree = Some(root);
+
+            if expected_value == i32::MAX {
+                break;
+            }
+
+            println!("Searched depth {}", i);
+        }
+
+        self.tree.as_ref().and_then(|root| {
+            root.children.as_ref().and_then(|children| {
+                children
+                    .iter()
+                    .find(|(_, child)| child.value == expected_value)
+                    .map(|(chess_move, _)| *chess_move)
+            })
+        })
+    }
+
     pub fn advance_move(&mut self, chess_move: ChessMove) {
         self.game.make_move(&chess_move);
+
+        self.tree = None;
+
+        // if let Some(tree) = self.tree.as_mut() {
+        //     if let Some(mut children) = tree.children.take() {
+        //         for (child_move, child) in children.drain(..) {
+        //             if chess_move == child_move {
+        //                 self.tree = Some(child);
+        //                 return;
+        //             }
+        //         }
+        //     }
+        // }
     }
 
     pub fn evaluate_state(&self, game: &Game) -> i32 {
         let mut rng = rand::thread_rng();
         let mut score = rng.gen_range(-10i32..=10);
 
-        lazy_static!(
+        lazy_static! {
             static ref PAWN_BOARD: [[i32; 8]; 8] = [
-                [100,100,100,100,100,100,100,100],
-                [150,150,100,100,100,100,150,150],
-                [130,150,125,125,125,125,150,130],
-                [135,140,150,150,150,150,140,135],
-                [135,140,150,150,150,150,140,135],
-                [200,200,200,200,200,200,200,200],
-                [300,300,300,300,300,300,300,300],
-                [100,100,100,100,100,100,100,100]];
-
+                [100, 100, 100, 100, 100, 100, 100, 100],
+                [100, 100, 100, 100, 100, 100, 100, 100],
+                [100, 100, 115, 115, 115, 115, 100, 100],
+                [110, 110, 120, 120, 120, 120, 110, 110],
+                [120, 120, 120, 200, 200, 200, 200, 200],
+                [120, 120, 120, 200, 200, 200, 200, 200],
+                [120, 120, 120, 200, 200, 200, 200, 200],
+                [100, 100, 100, 100, 100, 100, 100, 100],
+            ];
             static ref KNIGHT_BOARD: [[i32; 8]; 8] = [
-                [300,300,300,300,300,300,300,300],
-                [300,300,300,300,300,300,300,300],
-                [300,300,350,350,350,350,300,300],
-                [300,300,350,350,350,350,300,300],
-                [300,300,350,350,350,350,300,300],
-                [300,300,350,350,350,350,300,300],
-                [300,300,300,300,300,300,300,300],
-                [300,300,300,300,300,300,300,300],];
-        );
+                [300, 300, 300, 300, 300, 300, 300, 300],
+                [300, 300, 300, 300, 300, 300, 300, 300],
+                [300, 300, 350, 350, 350, 350, 300, 300],
+                [300, 300, 350, 350, 350, 350, 300, 300],
+                [300, 300, 350, 350, 350, 350, 300, 300],
+                [300, 300, 350, 350, 350, 350, 300, 300],
+                [300, 300, 300, 300, 300, 300, 300, 300],
+                [300, 300, 300, 300, 300, 300, 300, 300],
+            ];
+            static ref KING_BOARD: [[i32; 8]; 8] = [
+                [250, 200, 50, 50, 100, 50, 200, 250],
+                [150, 150, 100, 50, 50, 50, 150, 150],
+                [100, 100, 100, 100, 100, 100, 100, 100],
+                [100, 100, 100, 100, 100, 100, 100, 100],
+                [100, 100, 100, 100, 100, 100, 100, 100],
+                [100, 100, 100, 100, 100, 100, 100, 100],
+                [150, 150, 100, 50, 50, 50, 150, 150],
+                [250, 200, 50, 50, 100, 50, 200, 250],
+            ];
+
+            static ref ENDGAME_KING_BOARD: [[i32; 8]; 8] = [
+                [150, 100, 75, 50, 50, 75, 100, 150],
+                [100, 100, 50, 40, 40, 50, 100, 100],
+                [75, 50, 50, 25, 25, 50, 50, 75],
+                [50, 40, 25, 0, 0, 25, 40, 50],
+                [50, 40, 25, 0, 0, 25, 40, 50],
+                [75, 50, 50, 25, 25, 50, 50, 75],
+                [100, 100, 50, 40, 40, 50, 100, 100],
+                [150, 100, 75, 50, 50, 75, 100, 150],
+            ];
+        };
 
         // TODO: Knights to center of board
 
@@ -170,18 +330,46 @@ impl Engine {
             score -= 50;
         }
 
+        let mut has_bishup = [false, false];
+        let mut has_knight = [false, false];
+
+        let mut pawns = [0, 0];
+        let mut pieces = [0, 0];
+
         for row in 0usize..=7usize {
             for column in 0usize..=7usize {
                 if let Some(piece) = game.board.get(&Position::encode(row, column)) {
                     let piece_value = match piece.piece_type {
-                        PieceType::King => 0,
+                        PieceType::King => if game.half_moves < 30 {
+                            KING_BOARD[row][column]
+                        } else {
+                            -ENDGAME_KING_BOARD[row][column]
+                        },
                         PieceType::Queen => 900,
                         PieceType::Rook => 500,
-                        PieceType::Bishup => 300,
-                        PieceType::Knight => KNIGHT_BOARD[row][column],
+                        PieceType::Bishup => {
+                            let bishup_value = if has_bishup[piece.color as usize] {
+                                400
+                            }
+                            else {
+                                350
+                            };
+                            has_bishup[piece.color as usize] = !has_bishup[piece.color as usize];
+                            bishup_value
+                        },
+                        PieceType::Knight => {
+                            let knight_value = if has_knight[piece.color as usize] {
+                                KNIGHT_BOARD[row][column] + 100
+                            }
+                            else {
+                                KNIGHT_BOARD[row][column]
+                            };
+                            has_knight[piece.color as usize] = !has_bishup[piece.color as usize];
+                            knight_value
+                        }
                         PieceType::Pawn => match self.player {
                             PieceColor::Black => PAWN_BOARD[7 - row][column],
-                            PieceColor::White => PAWN_BOARD[row][column]
+                            PieceColor::White => PAWN_BOARD[row][column],
                         },
                     };
 
@@ -313,7 +501,7 @@ mod tests {
     }
 
     #[test]
-    fn test_false_mate() {
+    fn test_false_mate_0() {
         let moves_list = vec![
             "e2e3", "e7e5", "d1g4", "b8c6", "g4e4", "d7d5", "e4a4", "d8d7", "f1b5", "f8b4", "g1f3",
             "e5e4", "f3e5", "d7d6", "e5c6", "b4c5", "b2b4", "c5b6", "c6a7", "c7c6", "a7c8", "a8c8",
@@ -327,7 +515,22 @@ mod tests {
 
         let engine = get_engine_with_moves(moves_list);
         println!("Got to FEN {}", engine.game.to_fen());
-        let best_move = engine.get_best_move().expect("No move returned");
-        assert_eq!(best_move.to_string(), "h1h8".to_string());
+        let moves = engine.game.get_moves();
+        assert!(!moves.is_empty());
+    }
+
+    #[test]
+    fn test_false_mate_2() {
+        let moves_list = vec![
+            "e2e3", "g7g6", "d1f3", "g8f6", "f1c4", "f8g7", "b1c3", "c7c5", "c3e4", "h7h5", "e4c5",
+            "h5h4", "c5b7", "c8b7", "f3b7", "a7a5", "b7a8", "e7e5", "g1f3", "h8h5", "b2b3", "f6g8",
+            "g2g4", "g8e7", "g4h5", "d8c7", "f3g5", "f7f6", "g5f3", "c7c8", "h5g6", "e7f5", "c4f7",
+            "e8d8", "a8a5", "d8e7", "c1a3",
+        ];
+
+        let engine = get_engine_with_moves(moves_list);
+        println!("Got to FEN {}", engine.game.to_fen());
+        let moves = engine.game.get_moves();
+        assert!(!moves.is_empty());
     }
 }

@@ -10,7 +10,6 @@ use piece::*;
 use position::Position;
 use chess_move::ChessMove;
 use eyre::{eyre, Result};
-use serde_json::value;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CastleRights {
@@ -32,6 +31,7 @@ pub struct Game {
     pub en_passant: Option<Position>,
     pub turn: PieceColor,
     pub castle_rights: [CastleRights; 2],
+    pub half_moves: u16,
 }
 
 impl Game {
@@ -40,7 +40,8 @@ impl Game {
             board: Board::default(),
             en_passant: None,
             turn: PieceColor::White,
-            castle_rights: [CastleRights::default(); 2]
+            castle_rights: [CastleRights::default(); 2],
+            half_moves: 0,
         }
     }
 
@@ -117,24 +118,19 @@ impl Game {
             result.en_passant = match Position::from_str(sections[3]) {
                 Ok(pos) => {
                     let pos_tuple = pos.decode();
-                    if let Some(forward) = pos.forward(&!result.turn) {
-                        match result.turn {
-                            PieceColor::Black => if pos_tuple.0 == 2 && result.board.get(&forward).map_or(false, |&p| p == Piece { piece_type: PieceType::Pawn, color: PieceColor::White }) {
-                                Some(pos)
-                            }
-                            else {
-                                return Err(eyre!("Invalid En Passant Black"))
-                            },
-                            PieceColor::White => if pos_tuple.0 == 5 && result.board.get(&forward).map_or(false, |&p| p == Piece { piece_type: PieceType::Pawn, color: PieceColor::Black }) {
-                                Some(pos)
-                            }
-                            else {
-                                return Err(eyre!("Invalid En Passant White"))
-                            },
+                    match result.turn {
+                        PieceColor::Black => if pos_tuple.0 == 2 && result.board.get(&pos.forward(&!result.turn)).map_or(false, |&p| p == Piece { piece_type: PieceType::Pawn, color: PieceColor::White }) {
+                            Some(pos)
                         }
-                    }
-                    else {
-                        return Err(eyre!("Invalid En Passant on edge of board"))
+                        else {
+                            return Err(eyre!("Invalid En Passant Black"))
+                        },
+                        PieceColor::White => if pos_tuple.0 == 5 && result.board.get(&pos.forward(&!result.turn)).map_or(false, |&p| p == Piece { piece_type: PieceType::Pawn, color: PieceColor::Black }) {
+                            Some(pos)
+                        }
+                        else {
+                            return Err(eyre!("Invalid En Passant White"))
+                        },
                     }
                 },
                 Err(msg) => return Err(eyre!("Invalid En Passant {}, {}", sections[3], msg))
@@ -266,10 +262,23 @@ impl Game {
                     let must_promote = [(PieceColor::Black, 1usize), (PieceColor::White, 6usize)].contains(&(self.turn, from.row()));
                     let promotion_types = [PieceType::Queen, PieceType::Rook, PieceType::Bishup, PieceType::Knight];
 
-                    if let Some(to) = from.forward(&self.turn) {
-                        let (to_row, to_column) = to.decode_isize();
-                        if self.board.get(&to).is_none() {
-                            if self.board.test_move(from, &to, king_position, &self.turn) {
+                    let to = from.forward(&self.turn);
+                    let (to_row, to_column) = to.decode_isize();
+                    if self.board.get(&to).is_none() {
+                        if self.board.test_move(from, &to, king_position, &self.turn) {
+                            if must_promote {
+                                for piece_type in promotion_types {
+                                    moves.push(ChessMove::PawnPromote(*from, to, piece_type))
+                                }
+                            }
+                            else {
+                                moves.push(ChessMove::Move(*from, to));
+                            }
+                        }
+
+                        if [(PieceColor::Black, 6usize), (PieceColor::White, 1usize)].contains(&(self.turn, from.row())) {
+                            let to = to.forward(&self.turn);
+                            if self.board.get(&to).is_none() && self.board.test_move(from, &to, king_position, &self.turn) {
                                 if must_promote {
                                     for piece_type in promotion_types {
                                         moves.push(ChessMove::PawnPromote(*from, to, piece_type))
@@ -279,42 +288,27 @@ impl Game {
                                     moves.push(ChessMove::Move(*from, to));
                                 }
                             }
+                        }
+                    }
 
-                            if [(PieceColor::Black, 6usize), (PieceColor::White, 1usize)].contains(&(self.turn, from.row())) {
-                                if let Some(to) = to.forward(&self.turn) {
-                                    if self.board.get(&to).is_none() && self.board.test_move(from, &to, king_position, &self.turn) {
-                                        if must_promote {
-                                            for piece_type in promotion_types {
-                                                moves.push(ChessMove::PawnPromote(*from, to, piece_type))
-                                            }
-                                        }
-                                        else {
-                                            moves.push(ChessMove::Move(*from, to));
-                                        }
-                                    }
+                    // Check captures
+                    for position_values in [(to_row, to_column + 1),(to_row, to_column - 1)] {
+                        if let Some(to) = Position::encode_checked(position_values.0, position_values.1) {
+                            if Some(to) == self.en_passant {
+                                let mut next_board = self.board;
+                                next_board.make_move(from, &to);
+                                if !next_board.has_check(king_position, &self.turn) {
+                                    moves.push(ChessMove::Move(*from, to));
                                 }
                             }
-                        }
-
-                        // Check captures
-                        for position_values in [(to_row, to_column + 1),(to_row, to_column - 1)] {
-                            if let Some(to) = Position::encode_checked(position_values.0, position_values.1) {
-                                if Some(to) == self.en_passant {
-                                    let mut next_board = self.board;
-                                    next_board.make_move(from, &to);
-                                    if !next_board.has_check(king_position, &self.turn) {
-                                        moves.push(ChessMove::Move(*from, to));
+                            else if self.board.get(&to).map_or(false, |&Piece{piece_type: _, color}| color != self.turn) && self.board.test_move(from, &to, king_position, &self.turn) {
+                                if must_promote {
+                                    for piece_type in promotion_types {
+                                        moves.push(ChessMove::PawnPromote(*from, to, piece_type))
                                     }
                                 }
-                                else if self.board.get(&to).map_or(false, |&Piece{piece_type: _, color}| color != self.turn) && self.board.test_move(from, &to, king_position, &self.turn) {
-                                    if must_promote {
-                                        for piece_type in promotion_types {
-                                            moves.push(ChessMove::PawnPromote(*from, to, piece_type))
-                                        }
-                                    }
-                                    else {
-                                        moves.push(ChessMove::Move(*from, to));
-                                    }
+                                else {
+                                    moves.push(ChessMove::Move(*from, to));
                                 }
                             }
                         }
@@ -388,6 +382,8 @@ impl Game {
     pub fn make_move(&mut self, chess_move: &ChessMove) {
         let mut remove_en_passant = true;
 
+        self.half_moves += 1;
+
         match chess_move {
             ChessMove::CastleKingside => {
                 self.castle_rights[self.turn as usize].kingside = false;
@@ -440,12 +436,7 @@ impl Game {
 
                 // Handle capture by en passants
                 if Some(to) == self.en_passant.as_ref() && self.board.get(from).map_or(false, |Piece{piece_type, color: _}| piece_type == &PieceType::Pawn) {
-                    if let Some(captured) = to.backward(&self.turn) {
-                        self.board.remove_piece(&captured).take();
-                    }
-                    else {
-                        println!("Invalid En Passant because captured piece would be off the board");
-                    }
+                    self.board.remove_piece(&to.backward(&self.turn)).take();
                 }
 
                 // Handle double move and marking en passant square
@@ -458,7 +449,7 @@ impl Game {
                 let to_row = to.row();
 
                 if (from_row, to_row) == double_move_from_to && self.board.get(from).map_or(false, |&Piece{piece_type, color: _}| piece_type == PieceType::Pawn) {
-                    self.en_passant = to.clone().backward(&self.turn);
+                    self.en_passant = Some(to.clone().backward(&self.turn));
                     remove_en_passant = false;
                 }
 

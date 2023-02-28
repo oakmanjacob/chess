@@ -76,7 +76,7 @@ impl Board {
             }
         }
         
-        let forward_position = position.forward(player_color);
+        let forward_position = position.forward_checked(player_color);
 
         // Check Diagonals
         for threat_position in self.get_bishup_move_positions(position, player_color, true) {
@@ -97,7 +97,7 @@ impl Board {
             if self.get(&threat_position).map_or(false, |&Piece{piece_type, color}| color != *player_color && (
                 piece_type == PieceType::Queen || 
                 piece_type == PieceType::Rook ||
-                (piece_type == PieceType::King && (position.row().abs_diff(threat_position.row()) == 1usize) || position.column().abs_diff(threat_position.column()) == 1usize))) {
+                (piece_type == PieceType::King && (position.row().abs_diff(threat_position.row()) == 1usize || position.column().abs_diff(threat_position.column()) == 1usize)))) {
                 return true;
             }
         }

@@ -1,6 +1,7 @@
 use super::piece::PieceColor;
 use std::fmt;
 use eyre::{eyre, Result};
+use std::cmp;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
 pub struct Position {
@@ -78,7 +79,7 @@ impl Position {
         Ok(Position::encode(row, col))
     }
 
-    pub fn forward(&self, player_color: &PieceColor) -> Option<Position> {
+    pub fn forward_checked(&self, player_color: &PieceColor) -> Option<Position> {
         match player_color {
             PieceColor::Black => if self.row != 0 {
                 Some(Position{row: self.row - 1, column: self.column})
@@ -95,19 +96,26 @@ impl Position {
         }
     }
 
-    pub fn backward(&self, player_color: &PieceColor) -> Option<Position> {
+    pub fn forward(&self, player_color: &PieceColor) -> Position {
+        match player_color {
+            PieceColor::Black => Position{row: self.row.saturating_sub(1), column: self.column},
+            PieceColor::White => Position{row: (self.row + 1) & 0b111, column: self.column}
+        }
+    }
+
+    pub fn backward(&self, player_color: &PieceColor) -> Position {
         match player_color {
             PieceColor::Black => if self.row != 7 {
-                Some(Position{row: self.row + 1, column: self.column})
+                Position{row: self.row + 1, column: self.column}
             }
             else {
-                None
+                *self
             },
             PieceColor::White => if self.row != 0 {
-                Some(Position{row: self.row - 1, column: self.column})
+                Position{row: self.row - 1, column: self.column}
             }
             else {
-                None
+                *self
             }
         }
     }
