@@ -154,7 +154,8 @@ impl Engine {
             for chess_move in moves.iter() {
                 let mut next_game = game.clone();
                 next_game.make_move(chess_move);
-                value = cmp::max(value, self.search_tree(&next_game, depth - 1, alpha, beta));
+                let castled_bonus = (chess_move == &ChessMove::CastleKingside || chess_move == &ChessMove::CastleQueenside) as i32 * 200;
+                value = cmp::max(value, self.search_tree(&next_game, depth - 1, alpha, beta) + castled_bonus);
 
                 if value > beta {
                     break;
@@ -168,18 +169,9 @@ impl Engine {
                 let mut next_game = game.clone();
                 next_game.make_move(chess_move);
 
-                if next_game.board.get_king(&PieceColor::White).is_none()
-                    || next_game.board.get_king(&PieceColor::White).is_none()
-                {
-                    println!(
-                        "For {} after move {} we have no king in board {}",
-                        game.to_fen(),
-                        chess_move,
-                        next_game.to_fen()
-                    );
-                }
+                let castled_bonus = (chess_move == &ChessMove::CastleKingside || chess_move == &ChessMove::CastleQueenside) as i32 * 200;
 
-                value = cmp::min(value, self.search_tree(&next_game, depth - 1, alpha, beta));
+                value = cmp::min(value, self.search_tree(&next_game, depth - 1, alpha, beta) - castled_bonus);
 
                 if value < alpha {
                     break;
@@ -323,23 +315,19 @@ impl Engine {
         }
 
         if game.castle_rights[!self.player as usize].kingside {
-            score -= 50;
+            score -= 25;
         }
 
         if game.castle_rights[!self.player as usize].queenside {
-            score -= 50;
+            score -= 25;
         }
 
         let mut has_bishup = [false, false];
         let mut has_knight = [false, false];
 
-        let mut pawns = [0i32, 0];
-        let mut pieces = [0i32, 0];
-
         for row in 0usize..=7usize {
             for column in 0usize..=7usize {
                 if let Some(piece) = game.board.get(&Position::encode(row, column)) {
-                    pieces[piece.color as usize] += 1;
                     let piece_value = match piece.piece_type {
                         PieceType::King => {
                             if game.half_moves < 30 {
@@ -376,11 +364,11 @@ impl Engine {
                             knight_value
                         }
                         PieceType::Pawn => {
-                            pawns[piece.color as usize] += 1;
+                            // Pawns get more valuable as game goes on
                             match self.player {
-                                PieceColor::Black => PAWN_BOARD[7 - row][column],
-                                PieceColor::White => PAWN_BOARD[row][column],
-                            }
+                                PieceColor::Black => PAWN_BOARD[7 - row][column] + game.half_moves as i32 * 2,
+                                PieceColor::White => PAWN_BOARD[row][column] + game.half_moves as i32 * 2,
+                            }                           
                         }
                     };
 
@@ -392,16 +380,6 @@ impl Engine {
                 }
             }
         }
-
-        // If up pawns, we want to minimize the number of pieces they have
-        score += (pawns[self.player as usize] - pawns[!self.player as usize])
-            * 10
-            * (8u32.saturating_sub(pieces[!self.player as usize] as u32)) as i32;
-
-        // If up pieces, we want to minimize the number of pawns they have
-        score += (pieces[self.player as usize] - pieces[!self.player as usize])
-            * 10
-            * (8u32.saturating_sub(pawns[!self.player as usize] as u32)) as i32;
 
         score
     }
@@ -554,6 +532,17 @@ mod tests {
         let moves = engine.game.get_moves();
         assert!(!moves.is_empty());
     }
+
+    #[test]
+    fn test_failed_move() {
+        let moves_list = vec![
+            "b2b3", "g7g6", "c1b2", "g8f6", "e2e3", "f8g7", "f1c4", "d7d5", "c4d3", "e8g8", "c2c4",
+            "h8f8", "g1f3", "b8c6", "c4d5", "c6b4", "d3c4", "b4d3", "c4d3",
+        ];
+
+
+    }
+
 
     // #[test]
     // fn test_missed_win_2() {

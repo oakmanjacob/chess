@@ -1,7 +1,6 @@
 use super::piece::PieceColor;
 use std::fmt;
 use eyre::{eyre, Result};
-use std::cmp;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
 pub struct Position {

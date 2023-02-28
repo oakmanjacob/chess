@@ -8,7 +8,7 @@ use crate::game::position::Position;
 use super::game::board::Board;
 use super::game::piece::{PieceType, PieceColor};
 use super::game::chess_move::ChessMove;
-use super::game::{Game, piece::*};
+use super::game::piece::*;
 
 pub struct Client {
     board_pieces: Vec<(Piece, Position)>,
@@ -30,12 +30,7 @@ impl Client {
         cookie.set_same_site(Some(SameSite::Lax));
         driver.add_cookie(cookie).await.unwrap();
         driver.refresh().await.unwrap();
-
-        let game = Game::new();
-
-        let mut client = Client{board_pieces: vec!(), driver};
-        client.update_pieces_from_board(&game.board).await;
-        Ok(client)
+        Ok(Client{board_pieces: vec!(), driver})
     }
 
     pub async fn get_player_color(&mut self) -> WebDriverResult<PieceColor> {
@@ -52,7 +47,7 @@ impl Client {
         }
     }
 
-    pub async fn update_pieces_from_board(&mut self, board: &Board) {
+    pub fn update_pieces_from_board(&mut self, board: &Board) {
         self.board_pieces = vec!();
         for row in 0usize..=7usize {
             for column in 0usize..=7usize {
@@ -232,32 +227,5 @@ impl Client {
         }
 
         Ok(())
-    }
-
-    pub async fn get_current_turn(&self) -> WebDriverResult<PieceColor> {
-        // timers have class clock-component
-        // opponent_timer will have class clock-top
-        // Self timer will have class clock-bottom
-        // Black timer has class clock-black
-        // White timer has class clock-white
-        // Current turn clock has class clock-player-turn
-        // timers contain span data-cy="clock-time"
-
-        let current_player_timer = self.driver.find(By::Css(".clock-component.clock-player-turn")).await?.class_name().await?.expect("Got empty class object for current turn clock component");
-
-        if current_player_timer.contains("clock-black")  {
-            Ok(PieceColor::Black)
-        }
-        else {
-            Ok(PieceColor::White)
-        }
-    }
-
-    pub async fn is_game_over(&self) -> bool {
-        self.driver.find(By::Css(".game-over-modal-content,.modal-game-over-component")).await.is_ok()
-    }
-
-    pub async fn disconnect(self) -> WebDriverResult<()> {
-        self.driver.quit().await
     }
 }

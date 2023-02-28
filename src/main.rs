@@ -31,7 +31,7 @@ async fn main() {
 async fn run_client(client: &mut Client) {
     let player_color = client.get_player_color().await.expect("Error! Could not get player color");
     let mut engine = Engine::new(Game::new(), player_color);
-    client.update_pieces_from_board(&engine.game.board).await;
+    client.update_pieces_from_board(&engine.game.board);
 
     let mut is_my_turn = player_color == PieceColor::White;
     let mut keep_playing = true;
@@ -55,7 +55,7 @@ async fn pick_and_make_move(client: &mut Client, engine: &mut Engine) -> bool {
             println!("Client failed to make move")
         }
         engine.advance_move(chess_move);
-        client.update_pieces_from_board(&engine.game.board).await;
+        client.update_pieces_from_board(&engine.game.board);
     }
     else
     {
@@ -68,6 +68,8 @@ async fn pick_and_make_move(client: &mut Client, engine: &mut Engine) -> bool {
 
 async fn wait_for_opponent_move(client: &mut Client, engine: &mut Engine) -> bool {
     let mut opponent_move: Option<ChessMove> = None;
+    let valid_moves = engine.game.get_moves();
+
     while opponent_move.is_none() {
         opponent_move = client.update_board(&!engine.player).await.ok().flatten();
         if engine.game.get_moves().is_empty() {
@@ -75,8 +77,15 @@ async fn wait_for_opponent_move(client: &mut Client, engine: &mut Engine) -> boo
         }
 
         if let Some(o_move) = opponent_move {
-            println!("{}", o_move);
-            engine.advance_move(o_move);
+            if valid_moves.iter().any(|valid_move| &o_move == valid_move) {
+                println!("{}", o_move);
+                engine.advance_move(o_move);
+            }
+            else {
+                println!("Bad move recognized {}! Trying again.", o_move);
+                opponent_move = None;
+                client.update_pieces_from_board(&engine.game.board);
+            }
         }
     }
 
