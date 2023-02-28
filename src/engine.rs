@@ -63,7 +63,10 @@ impl Engine {
                 let mut children = vec![];
 
                 // Handle stalemates
-                if moves.is_empty() && !game.board.has_check(&game.board.get_king(&game.turn).unwrap(), &game.turn)
+                if moves.is_empty()
+                    && !game
+                        .board
+                        .has_check(&game.board.get_king(&game.turn).unwrap(), &game.turn)
                 {
                     root.value = 0;
                     root.children = Some(vec![]);
@@ -131,9 +134,7 @@ impl Engine {
         let moves = game.get_moves();
 
         if moves.is_empty() {
-            if game
-                .board
-                .has_check(&game.board.get_king(&game.turn).unwrap(), &game.turn)
+            if game.board.has_check(&game.board.get_king(&game.turn).unwrap(), &game.turn)
             {
                 if self.player == game.turn {
                     return i32::MIN + (self.search_depth - depth) as i32;
@@ -267,7 +268,7 @@ impl Engine {
                 [100, 100, 100, 100, 100, 100, 100, 100],
                 [100, 100, 100, 100, 100, 100, 100, 100],
                 [100, 100, 115, 115, 115, 115, 100, 100],
-                [110, 110, 120, 120, 120, 120, 110, 110],
+                [105, 105, 120, 120, 120, 120, 105, 105],
                 [120, 120, 120, 200, 200, 200, 200, 200],
                 [120, 120, 120, 200, 200, 200, 200, 200],
                 [120, 120, 120, 200, 200, 200, 200, 200],
@@ -293,7 +294,6 @@ impl Engine {
                 [150, 150, 100, 50, 50, 50, 150, 150],
                 [250, 200, 50, 50, 100, 50, 200, 250],
             ];
-
             static ref ENDGAME_KING_BOARD: [[i32; 8]; 8] = [
                 [150, 100, 75, 50, 50, 75, 100, 150],
                 [100, 100, 50, 40, 40, 50, 100, 100],
@@ -333,44 +333,55 @@ impl Engine {
         let mut has_bishup = [false, false];
         let mut has_knight = [false, false];
 
-        let mut pawns = [0, 0];
-        let mut pieces = [0, 0];
+        let mut pawns = [0i32, 0];
+        let mut pieces = [0i32, 0];
 
         for row in 0usize..=7usize {
             for column in 0usize..=7usize {
                 if let Some(piece) = game.board.get(&Position::encode(row, column)) {
+                    pieces[piece.color as usize] += 1;
                     let piece_value = match piece.piece_type {
-                        PieceType::King => if game.half_moves < 30 {
-                            KING_BOARD[row][column]
-                        } else {
-                            -ENDGAME_KING_BOARD[row][column]
-                        },
-                        PieceType::Queen => 900,
+                        PieceType::King => {
+                            if game.half_moves < 30 {
+                                KING_BOARD[row][column]
+                            } else {
+                                -ENDGAME_KING_BOARD[row][column]
+                            }
+                        }
+                        PieceType::Queen => {
+                            if game.half_moves < 10 && ((row != 7 && row != 0) || column != 3) {
+                                // Don't bring queen out early
+                                800
+                            } else {
+                                900
+                            }
+                        }
                         PieceType::Rook => 500,
                         PieceType::Bishup => {
                             let bishup_value = if has_bishup[piece.color as usize] {
-                                400
-                            }
-                            else {
-                                350
+                                425
+                            } else {
+                                325
                             };
                             has_bishup[piece.color as usize] = !has_bishup[piece.color as usize];
                             bishup_value
-                        },
+                        }
                         PieceType::Knight => {
                             let knight_value = if has_knight[piece.color as usize] {
                                 KNIGHT_BOARD[row][column] + 100
-                            }
-                            else {
+                            } else {
                                 KNIGHT_BOARD[row][column]
                             };
                             has_knight[piece.color as usize] = !has_bishup[piece.color as usize];
                             knight_value
                         }
-                        PieceType::Pawn => match self.player {
-                            PieceColor::Black => PAWN_BOARD[7 - row][column],
-                            PieceColor::White => PAWN_BOARD[row][column],
-                        },
+                        PieceType::Pawn => {
+                            pawns[piece.color as usize] += 1;
+                            match self.player {
+                                PieceColor::Black => PAWN_BOARD[7 - row][column],
+                                PieceColor::White => PAWN_BOARD[row][column],
+                            }
+                        }
                     };
 
                     if piece.color == self.player {
@@ -381,6 +392,16 @@ impl Engine {
                 }
             }
         }
+
+        // If up pawns, we want to minimize the number of pieces they have
+        score += (pawns[self.player as usize] - pawns[!self.player as usize])
+            * 10
+            * (8u32.saturating_sub(pieces[!self.player as usize] as u32)) as i32;
+
+        // If up pieces, we want to minimize the number of pawns they have
+        score += (pieces[self.player as usize] - pieces[!self.player as usize])
+            * 10
+            * (8u32.saturating_sub(pawns[!self.player as usize] as u32)) as i32;
 
         score
     }
@@ -533,4 +554,26 @@ mod tests {
         let moves = engine.game.get_moves();
         assert!(!moves.is_empty());
     }
+
+    // #[test]
+    // fn test_missed_win_2() {
+    //     let moves_list = vec![
+    //         "e2e4", "g8f6", "e4e5", "f6g8", "d2d4", "e7e6", "b1c3", "h7h5", "g1f3", "d8e7", "c1g5",
+    //         "e7b4", "a1b1", "c7c5", "d1d2", "f7f5", "a2a3", "b4a5", "d4d5", "h5h4", "g5h4", "e6d5",
+    //         "c3d5", "a5d2", "e1d2", "f5f4", "d5c7", "e8f7", "f1c4", "d7d5", "e5d6", "f7g6", "f3e5",
+    //         "g6f5", "c7a8", "f5e5", "h1e1", "e5d6", "g2g3", "b8c6", "e1e8", "c6e5", "e8d8", "c8d7",
+    //         "c4a2", "e5f3", "d2d3", "c5c4", "d3c3", "g8e7", "a2c4", "f3h2", "b1e1", "e7c6", "h4g5",
+    //         "c6d8", "g5d8", "d6c6", "e1e5", "f8c5", "c4d5", "c6b5", "a8c7", "b5b6", "c7e8", "b6b5",
+    //         "d5b7", "h8e8", "b7e4", "e8e5", "g3f4", "e5e4", "c3d3", "e4f4", "d3e2", "f4f2", "e2d3",
+    //         "d7f5", "d3c3", "f2c2", "c3b3", "c2c4", "d8c7", "f5c2", "b3a2", "h2f3", "c7g3", "c4a4",
+    //         "a2a1", "g7g5", "a1a2", "g5g4", "g3b8", "b5c4", "b8g3", "c4d5", "a2a1", "c5f8", "a1a2",
+    //         "f3d4", "g3f2", "d4f5", "f2a7", "a4a7", "a2a1", "g4g3", "b2b4", "f8g7", "a1a2", "g3g2",
+    //         "b4b5", "g2g1q", "b5b6", "g1b1",
+    //     ];
+
+    //     let engine = get_engine_with_moves(moves_list);
+    //     println!("Got to FEN {}", engine.game.to_fen());
+    //     // let moves = engine.game.get_moves();
+    //     // assert!(!moves.is_empty());
+    // }
 }
