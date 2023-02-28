@@ -136,9 +136,9 @@ impl Engine {
                 .has_check(&game.board.get_king(&game.turn).unwrap(), &game.turn)
             {
                 if self.player == game.turn {
-                    return i32::MIN;
+                    return i32::MIN + (self.search_depth - depth) as i32;
                 } else {
-                    return i32::MAX;
+                    return i32::MAX - (self.search_depth - depth) as i32;
                 }
             } else {
                 return 0;
@@ -203,7 +203,7 @@ impl Engine {
 
             let value = self.search_tree(&next_game, self.search_depth - 1, i32::MIN, i32::MAX);
 
-            if value > max_value || (value == max_value && returned_move.is_none()) {
+            if value > max_value || returned_move.is_none() {
                 max_value = value;
                 returned_move = Some(*chess_move);
             }
