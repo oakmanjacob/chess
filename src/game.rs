@@ -531,7 +531,7 @@ mod tests {
     {
         let mut curr_game = Game::new();
 
-        let values = curr_game.perft(8);
+        let values = curr_game.perft(5);
 
         let expected_set: Vec<(&str, usize)> = vec!(
             ("a2a3", 181046),
