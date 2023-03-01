@@ -61,7 +61,6 @@ async fn pick_and_make_move(client: &mut Client, engine: &mut Engine) -> bool {
     }
     else
     {
-        println!("Checkmate!");
         return false;
     }
 
@@ -71,6 +70,10 @@ async fn pick_and_make_move(client: &mut Client, engine: &mut Engine) -> bool {
 async fn wait_for_opponent_move(client: &mut Client, engine: &mut Engine) -> bool {
     let mut opponent_move: Option<ChessMove> = None;
     let valid_moves = engine.game.get_moves();
+
+    if valid_moves.is_empty() {
+        return false;
+    }
 
     while !client.board_has_changed().await {
         // Wait for board to change

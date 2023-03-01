@@ -151,11 +151,20 @@ impl Engine {
         // Evaluate
         if game.turn == self.player {
             value = i32::MIN;
+            let mut moves_game_list = vec!();
+            
             for chess_move in moves.iter() {
                 let mut next_game = game.clone();
                 next_game.make_move(chess_move);
+                let game_eval = self.evaluate_state(&next_game);
+                moves_game_list.push((*chess_move, next_game, game_eval));
+            }
+
+            moves_game_list.sort_unstable_by_key(|(_, _, game_eval)| -*game_eval);
+
+            for (chess_move, next_game, _) in moves_game_list.iter() {
                 let castled_bonus = (chess_move == &ChessMove::CastleKingside || chess_move == &ChessMove::CastleQueenside) as i32 * 200;
-                value = cmp::max(value, self.search_tree(&next_game, depth - 1, alpha, beta) + castled_bonus);
+                value = cmp::max(value, self.search_tree(next_game, depth - 1, alpha, beta) + castled_bonus);
 
                 if value > beta {
                     break;
@@ -165,13 +174,20 @@ impl Engine {
         } else {
             // min
             value = i32::MAX;
+            let mut moves_game_list = vec!();
+            
             for chess_move in moves.iter() {
                 let mut next_game = game.clone();
                 next_game.make_move(chess_move);
+                let game_eval = self.evaluate_state(&next_game);
+                moves_game_list.push((*chess_move, next_game, game_eval));
+            }
 
+            moves_game_list.sort_unstable_by_key(|(_, _, game_eval)| *game_eval);
+
+            for (chess_move, next_game, _) in moves_game_list.iter() {
                 let castled_bonus = (chess_move == &ChessMove::CastleKingside || chess_move == &ChessMove::CastleQueenside) as i32 * 200;
-
-                value = cmp::min(value, self.search_tree(&next_game, depth - 1, alpha, beta) - castled_bonus);
+                value = cmp::min(value, self.search_tree(next_game, depth - 1, alpha, beta) - castled_bonus);
 
                 if value < alpha {
                     break;
@@ -590,6 +606,23 @@ mod tests {
         ];
 
 
+    }
+
+    #[test]
+    fn test_sort() {
+        let mut values = [("five", 5),("seven", 7),("three", 3)];
+
+        values.sort_unstable_by_key(|(_, value)| *value);
+
+        for (name, value) in values.iter() {
+            println!("{}={}", name, value);
+        }
+
+        values.sort_unstable_by_key(|(_, value)| -*value);
+
+        for (name, value) in values.iter() {
+            println!("{}={}", name, value);
+        }
     }
 
 

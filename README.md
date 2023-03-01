@@ -31,5 +31,16 @@ Testing is done using perft which counts the number of possible board states sev
 cargo test
 ```
 
+## Future Optimizations
+### Bitboards
+Utilizing bitboards would be a more efficient way to store piece locations because we could use bitwise operations to find threatened squares and move locations.
+This would also simplify how we look for checkmate which would hopefully make the move generation function faster
+
+### Hashing board states
+This is important both for implementing draw by repitition and also being able to prune branches where we already have searched
+
+### Iterative deepening
+We can improve the efficiency of alpha beta pruning by 
+
 
 
