@@ -79,7 +79,7 @@ async fn wait_for_opponent_move(client: &mut Client, engine: &mut Engine) -> boo
         // Wait for board to change
     }
 
-    sleep(Duration::from_millis(100)).await;
+    sleep(Duration::from_secs(1)).await;
 
     while opponent_move.is_none() {
         opponent_move = client.get_opponent_move(&!engine.player).await.ok().flatten();
