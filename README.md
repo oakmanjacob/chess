@@ -24,7 +24,7 @@ cargo build --release
 ```
 
 ```
-.\target\release\chessbot.exe <Chess Game Url>
+.\target\release\chessbot.exe <chess.com phpsessid token> <depth to search>
 ```
 
 ## Testing
