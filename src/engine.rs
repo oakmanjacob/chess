@@ -207,12 +207,24 @@ impl Engine {
 
     pub fn get_best_move_parallel(&self) -> Option<ChessMove> {
         let mut next_moves: Vec<(ChessMove, ChessMove, Game)> = vec!();
+        let mut move_map: HashMap<ChessMove, i32> = HashMap::new();
 
         for first_move in self.game.get_moves() {
             let mut next_game = self.game.clone();
             next_game.make_move(&first_move);
-            for second_move in next_game.get_moves() {
-                next_moves.push((first_move, second_move, next_game.clone()));
+
+            let moves = next_game.get_moves();
+            for second_move in moves.iter() {
+                next_moves.push((first_move, *second_move, next_game.clone()));
+            }
+
+            if moves.is_empty() {
+                if next_game.board.has_check(&next_game.board.get_king(&next_game.turn).unwrap(), &next_game.turn)
+                {
+                    move_map.insert(first_move, i32::MAX);
+                } else {
+                    move_map.insert(first_move, 0);
+                }
             }
         }
 
@@ -223,7 +235,6 @@ impl Engine {
             (*first_move, self.search_tree(&next_game, self.search_depth - 2, i32::MIN, i32::MAX) - castled_bonus)
         }).collect();
 
-        let mut move_map: HashMap<ChessMove, i32> = HashMap::new();
 
         for (chess_move, value) in game_lines.iter() {
             let castled_bonus = (chess_move == &ChessMove::CastleKingside || chess_move == &ChessMove::CastleQueenside) as i32 * 200;
