@@ -3,7 +3,7 @@ use std::fmt;
 use regex::*;
 use lazy_static::*;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ChessMove {
     CastleKingside,
     CastleQueenside,

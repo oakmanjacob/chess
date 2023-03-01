@@ -58,9 +58,119 @@ impl Client {
         }
     }
 
-    // Use highlight square-25 div to find a move
+    pub async fn get_new_board(&self) -> WebDriverResult<Board> {
+        lazy_static! {
+            static ref SQUARE_REGEX: Regex = Regex::new(r"square-(?P<column>[1-8])(?P<row>[1-8])").unwrap();
+            static ref PIECE_REGEX: Regex = Regex::new(r"(?P<color>[b|w])(?P<piece_type>[p|n|r|b|q|k])").unwrap();
+        }
 
-    pub async fn update_board(&mut self, player_color: &PieceColor) -> WebDriverResult<Option<ChessMove>> {
+        let pieces = self.driver.find_all(By::Css("chess-board.board div.piece")).await?;
+        
+        let mut handles = vec![];
+        
+        for piece in pieces.iter() {
+            handles.push(piece.class_name());
+        }
+
+        let piece_class_names = futures::future::join_all(handles).await;
+
+        let mut piece_positions: Vec<(Piece, Position)> = vec!();
+        for class_names in piece_class_names.iter() {
+            let mut piece: Option<Piece> = None;
+            let mut position: Option<Position> = None;
+
+            for name in class_names.as_ref().unwrap().as_ref().unwrap().split(' ') {
+                if let Some(captures) = SQUARE_REGEX.captures(name) {
+                    position = Some(Position::encode(captures["row"].parse::<usize>().unwrap() - 1, &captures["column"].parse::<usize>().unwrap() - 1));
+                }
+                else if let Some(captures) = PIECE_REGEX.captures(name) {
+                    piece = Some(Piece{piece_type: PieceType::from_char(captures["piece_type"].chars().next().unwrap()).unwrap(), color: PieceColor::from_char(captures["color"].chars().next().unwrap()).unwrap()});
+                }
+            }
+
+            if let Some(piece) = piece {
+                if let Some(position) = position {
+                    piece_positions.push((piece, position));
+                }
+                else {
+                    println!("Could not find position for piece");
+                }
+            }
+        }
+
+        let mut board = Board::default();
+
+        for (piece, position) in piece_positions {
+            board.add_piece(piece, &position);
+        }
+
+        Ok(board)
+    }
+
+    pub async fn board_has_changed(&self) -> bool {
+        // <chess-board class="board" id="board-single">
+        // contains div with class piece
+        // piece type defined by class (w|b)(p|n|b|r|q|k)
+        // piece square defined by class square-(column)(row)
+        lazy_static! {
+            static ref SQUARE_REGEX: Regex = Regex::new(r"square-(?P<column>[1-8])(?P<row>[1-8])").unwrap();
+            static ref PIECE_REGEX: Regex = Regex::new(r"(?P<color>[b|w])(?P<piece_type>[p|n|r|b|q|k])").unwrap();
+        }
+
+        //let elem_board = self.driver.find(By::ClassName("board")).await?;
+        let pieces = match self.driver.find_all(By::Css("chess-board.board div.piece")).await {
+            Ok(pieces) => pieces,
+            Err(_) => return false,
+        };
+        
+        let mut handles = vec![];
+        
+        for piece in pieces.iter() {
+            handles.push(piece.class_name());
+        }
+
+        let piece_class_names = futures::future::join_all(handles).await;
+
+        let mut piece_positions: Vec<(Piece, Position)> = vec!();
+        for class_names in piece_class_names.iter() {
+            let mut piece: Option<Piece> = None;
+            let mut position: Option<Position> = None;
+
+            for name in class_names.as_ref().unwrap().as_ref().unwrap().split(' ') {
+                if let Some(captures) = SQUARE_REGEX.captures(name) {
+                    position = Some(Position::encode(captures["row"].parse::<usize>().unwrap() - 1, &captures["column"].parse::<usize>().unwrap() - 1));
+                }
+                else if let Some(captures) = PIECE_REGEX.captures(name) {
+                    piece = Some(Piece{piece_type: PieceType::from_char(captures["piece_type"].chars().next().unwrap()).unwrap(), color: PieceColor::from_char(captures["color"].chars().next().unwrap()).unwrap()});
+                }
+            }
+
+            if let Some(piece) = piece {
+                if let Some(position) = position {
+                    piece_positions.push((piece, position));
+                }
+                else {
+                    println!("Could not find position for piece");
+                }
+            }
+        }
+
+        for (piece, position) in piece_positions.iter() {
+            if !self.board_pieces.iter().any(|(old_piece, old_position)| old_piece == piece && old_position == position) {
+                return true;
+            }
+        }
+
+        for (piece, position) in self.board_pieces.iter() {
+            if !piece_positions.iter().any(|(new_piece, new_position)| new_piece == piece && new_position == position) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    pub async fn get_opponent_move(&mut self, player_color: &PieceColor) -> WebDriverResult<Option<ChessMove>> {
         // <chess-board class="board" id="board-single">
         // contains div with class piece
         // piece type defined by class (w|b)(p|n|b|r|q|k)

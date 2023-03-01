@@ -4,7 +4,7 @@ mod engine;
 
 use clap::Parser;
 use client::Client;
-// use tokio::time::{sleep, Duration};
+use tokio::time::{sleep, Duration};
 use game::{Game, chess_move::ChessMove, piece::PieceColor};
 use engine::Engine;
 
@@ -43,13 +43,14 @@ async fn run_client(client: &mut Client) {
         }
         else {
             is_my_turn = !is_my_turn;
+            // TODO: Fix issue with getting bad moves
             wait_for_opponent_move(client, &mut engine).await
         }
     }
 }
 
 async fn pick_and_make_move(client: &mut Client, engine: &mut Engine) -> bool {
-    if let Some(chess_move) = engine.get_best_move() {
+    if let Some(chess_move) = engine.get_best_move_parallel() {
         println!("{}", chess_move);
         while client.make_move(&chess_move, &engine.player).await.is_err() {
             println!("Client failed to make move")
@@ -70,8 +71,14 @@ async fn wait_for_opponent_move(client: &mut Client, engine: &mut Engine) -> boo
     let mut opponent_move: Option<ChessMove> = None;
     let valid_moves = engine.game.get_moves();
 
+    while !client.board_has_changed().await {
+        // Wait for board to change
+    }
+
+    sleep(Duration::from_millis(100)).await;
+
     while opponent_move.is_none() {
-        opponent_move = client.update_board(&!engine.player).await.ok().flatten();
+        opponent_move = client.get_opponent_move(&!engine.player).await.ok().flatten();
         if engine.game.get_moves().is_empty() {
             return false;
         }

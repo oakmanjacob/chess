@@ -1,9 +1,9 @@
-use crate::game::piece::PieceType;
-
-use super::game::{chess_move::ChessMove, piece::PieceColor, position::Position, Game};
+use super::game::{chess_move::ChessMove, piece::*, position::Position, Game};
 use lazy_static::lazy_static;
 use rand::Rng;
 use std::cmp;
+use rayon::prelude::*;
+use std::collections::HashMap;
 
 pub struct Engine {
     pub game: Game,
@@ -205,6 +205,44 @@ impl Engine {
         returned_move
     }
 
+    pub fn get_best_move_parallel(&self) -> Option<ChessMove> {
+        let mut next_moves: Vec<(ChessMove, ChessMove, Game)> = vec!();
+
+        for first_move in self.game.get_moves() {
+            let mut next_game = self.game.clone();
+            next_game.make_move(&first_move);
+            for second_move in next_game.get_moves() {
+                next_moves.push((first_move, second_move, next_game.clone()));
+            }
+        }
+
+        let game_lines: Vec<(ChessMove, i32)> = next_moves.par_iter().map(|(first_move, second_move, next_game)| {
+            let castled_bonus = (second_move == &ChessMove::CastleKingside || second_move == &ChessMove::CastleQueenside) as i32 * 200;
+            let mut next_game = next_game.clone();
+            next_game.make_move(second_move);
+            (*first_move, self.search_tree(&next_game, self.search_depth - 2, i32::MIN, i32::MAX) - castled_bonus)
+        }).collect();
+
+        let mut move_map: HashMap<ChessMove, i32> = HashMap::new();
+
+        for (chess_move, value) in game_lines.iter() {
+            let castled_bonus = (chess_move == &ChessMove::CastleKingside || chess_move == &ChessMove::CastleQueenside) as i32 * 200;
+            
+
+            if let Some(min_val) = move_map.get(chess_move) {
+                move_map.insert(*chess_move, cmp::min(*min_val, *value + castled_bonus));
+            }
+            else {
+                move_map.insert(*chess_move, *value + castled_bonus);
+            }
+        }
+
+        move_map.drain().max_by_key(|(chess_move, value)| {
+            let castled_bonus = (chess_move == &ChessMove::CastleKingside || chess_move == &ChessMove::CastleQueenside) as i32 * 200;
+            *value + castled_bonus
+        }).map(|(chess_move, _)| chess_move)
+    }
+
     pub fn get_best_move_iterative(&mut self) -> Option<ChessMove> {
         let mut expected_value = 0;
         for i in 1..=self.search_depth {
@@ -261,9 +299,9 @@ impl Engine {
                 [100, 100, 100, 100, 100, 100, 100, 100],
                 [100, 100, 115, 115, 115, 115, 100, 100],
                 [105, 105, 120, 120, 120, 120, 105, 105],
-                [120, 120, 120, 200, 200, 200, 200, 200],
-                [120, 120, 120, 200, 200, 200, 200, 200],
-                [120, 120, 120, 200, 200, 200, 200, 200],
+                [120, 120, 120, 120, 120, 120, 120, 120],
+                [120, 120, 120, 120, 120, 120, 120, 120],
+                [120, 120, 120, 120, 120, 120, 120, 120],
                 [100, 100, 100, 100, 100, 100, 100, 100],
             ];
             static ref KNIGHT_BOARD: [[i32; 8]; 8] = [
@@ -341,24 +379,24 @@ impl Engine {
                                 // Don't bring queen out early
                                 800
                             } else {
-                                900
+                                1000
                             }
                         }
                         PieceType::Rook => 500,
                         PieceType::Bishup => {
                             let bishup_value = if has_bishup[piece.color as usize] {
-                                425
+                                525
                             } else {
-                                325
+                                425
                             };
                             has_bishup[piece.color as usize] = !has_bishup[piece.color as usize];
                             bishup_value
                         }
                         PieceType::Knight => {
                             let knight_value = if has_knight[piece.color as usize] {
-                                KNIGHT_BOARD[row][column] + 100
+                                KNIGHT_BOARD[row][column] + 200
                             } else {
-                                KNIGHT_BOARD[row][column]
+                                KNIGHT_BOARD[row][column] + 100
                             };
                             has_knight[piece.color as usize] = !has_bishup[piece.color as usize];
                             knight_value
