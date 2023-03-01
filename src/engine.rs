@@ -19,11 +19,11 @@ pub struct Node {
 }
 
 impl Engine {
-    pub fn new(game: Game, player: PieceColor) -> Engine {
+    pub fn new(game: Game, player: PieceColor, search_depth: u16) -> Engine {
         Engine {
             game,
             tree: None,
-            search_depth: 5,
+            search_depth,
             player,
         }
     }
@@ -428,7 +428,7 @@ mod tests {
     use super::*;
 
     fn get_engine_with_moves(moves_list: Vec<&str>) -> Engine {
-        let mut engine = Engine::new(Game::new(), PieceColor::White);
+        let mut engine = Engine::new(Game::new(), PieceColor::White, 5);
 
         for move_text in moves_list.iter() {
             if let Some(chess_move) = ChessMove::from_str(move_text) {

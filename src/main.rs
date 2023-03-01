@@ -11,6 +11,7 @@ use engine::Engine;
 #[derive(Parser)]
 struct Args {
     phpsessid: String,
+    search_depth: u16,
 }
 
 #[tokio::main]
@@ -23,14 +24,14 @@ async fn main() {
         println!("Connected to Browser, Press Enter to Continue");
         let _ = std::io::stdin().read_line(&mut String::new()).unwrap();
         println!("Playing");
-        run_client(&mut client).await;
+        run_client(&mut client, args.search_depth).await;
         println!("Game Over!");
     }
 }
 
-async fn run_client(client: &mut Client) {
+async fn run_client(client: &mut Client, search_depth: u16) {
     let player_color = client.get_player_color().await.expect("Error! Could not get player color");
-    let mut engine = Engine::new(Game::new(), player_color);
+    let mut engine = Engine::new(Game::new(), player_color, search_depth);
     client.update_pieces_from_board(&engine.game.board);
 
     let mut is_my_turn = player_color == PieceColor::White;
