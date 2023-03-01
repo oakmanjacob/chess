@@ -2,7 +2,10 @@
 Jacob Oakman
 
 ## Overview
-This will contain the basic pieces of a chess engine
+This is a chess bot meant to interact with chess.com as part of an unranked competition done with my friends.
+The rules specify that we cannot use any existing chess libraries or pretrained models.
+Another specification is that the bots are supposed to be somewhat novel in terms of algorithm.
+The novel aspect of my algorithm is it's parallelism. I would have liked to do more towards this but alas, deadlines are deadlines.
 
 ### Game
 The game is represented as a series of structs with the board as a two dimensional array of optional pieces.
@@ -13,7 +16,7 @@ The client is built on top of the async thirtyfour library for selenium in rust 
 ### Engine
 The engine is a minimax algorithm with alpha beta pruning. This has been further optimized to run in parallel using the rayon library.
 Parallelization is achieved by sequentially searching two moves deep and then creating a parallel iteration to activate the sequential minimax for each of those lines.
-This allows us to search 2 levels deeper when on an Azure vm with 96 cores.
+This allows us to search 2 levels deeper when on an Azure vm with 96 cores. On this machine we can achieve a depth of 7 within seconds with 8 being managable but in the 10s of seconds.
 
 ## Build Instructions
 Download Chrome 
